@@ -1,0 +1,49 @@
+
+take a look at the ACO data
+```{r}
+library(readr)
+suppressMessages(library(dplyr))
+library(knitr)
+opts_chunk$set(results = "hide")
+aco.part <- read.csv(file = "aco/aco-participant.csv", header = TRUE, sep = ",") 
+aco <- read.csv(file = "aco/aco-list.csv", header = TRUE, sep = ",") #397
+
+part.cnt <- aco.part %>% 
+	group_by(ACO.Legal.or.Name.Doing.Business.As, Public.Contact.Phone) %>% 
+	tally()
+
+```
+check whether two lists have same number of ACOs
+```{r}
+anti_join(aco, part.cnt, by = "ACO.Legal.or.Name.Doing.Business.As") #2
+anti_join(part.cnt, aco, by = "ACO.Legal.or.Name.Doing.Business.As")
+test <- inner_join(part.cnt, aco, by = "ACO.Legal.or.Name.Doing.Business.As")
+```
+found that 2 ACOs don't have data of participants,check why ???????
+* Accountable Care Partners, LLC
+* Emerald Physicians
+
+found that two ACOs are duplicate
+* Baroma Health Partners
+* Mercy ACO, LLC
+```{r, results = "markup"}
+str(unique(aco$ACO.Legal.or.Name.Doing.Business.As))
+test <- table(aco$ACO.Legal.or.Name.Doing.Business.As)
+which(test==2)
+# which(aco$ACO.Legal.or.Name.Doing.Business.As=="Baroma Health Partners")
+# which(aco$ACO.Legal.or.Name.Doing.Business.As=="Mercy ACO, LLC")
+aco[aco$ACO.Legal.or.Name.Doing.Business.As=="Baroma Health Partners",] # same info but different ACO.Service.Area and public.contact.phone
+aco[aco$ACO.Legal.or.Name.Doing.Business.As=="Mercy ACO, LLC",] # totally different info
+
+```
+find ACOs serving a targeted state,e.g.,CA
+```{r}
+CA.ACO <- as.character(aco$ACO.Legal.or.Name.Doing.Business.As[grep("CA", aco$ACO.Service.Area)])
+CA.only.ACO <- as.character(aco$ACO.Legal.or.Name.Doing.Business.As[aco$ACO.Service.Area=="CA"])
+part.cnt[part.cnt$ACO.Legal.or.Name.Doing.Business.As=="Baroma Health Partners",]
+test <- data.frame(aco.part[aco.part$ACO.Legal.or.Name.Doing.Business.As=="Baroma Health Partners",])
+# write_csv(test, path = "part_name.csv")
+```
+associate ACO with shared patient network.
+
+

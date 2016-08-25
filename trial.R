@@ -1,3 +1,5 @@
+# This rscript just play a little bit around the true data, but I need to 
+# learn how to use postgresql to get a full picture of the true data.
 # load the NPI data from json file
 library(readr)
 library(dplyr)
@@ -28,29 +30,44 @@ full.list <- full_join(from.list,to.list, by = c("from.NPI" = "to.NPI"))
 diff.list <- anti_join(from.list,to.list, by = c("from.NPI" = "to.NPI"))
 common.list <- semi_join(from.list, to.list, by = c("from.NPI" = "to.NPI"))
 
-intermediate.df.from <- semi_join(to.df, common.list, by = "from.NPI")
-intermediate.df.to <- semi_join(from.df, common.list, by = c("to.NPI"= "from.NPI"))
+intermediate.df <- semi_join(to.df, common.list, by = "from.NPI")
 
-#
-test.from <- intermediate.df.from %>% 
+intermediate.df <- intermediate.df %>% 
 	arrange(from.NPI, to.NPI)
 
-test.to <- intermediate.df.to %>% 
-	arrange(from.NPI, to.NPI)
+from.count <- intermediate.df %>% 
+	group_by(from.NPI) %>% 
+	tally() %>% 
+	arrange(desc(n))
 
-identical(test.from, test.to) #true
+to.count <- intermediate.df %>% 
+	group_by(to.NPI) %>% 
+	tally() %>% 
+	arrange(desc(n))
 
-test.from <- test.from %>% 
-	arrange(desc(pair.count))
+# the NPIs with the greatest number of referrals are radiology physicians in CA San 
+semi_join(head.from, head.to, by = c("from.NPI" = "to.NPI")) 
 
-a <- from.df[which(from.df$from.NPI == 1982606992),]
-a <- a %>% 
-	group_by(from.NPI, to.NPI)
-b <- to.df[which(to.df$to.NPI == 1982606992),]
-b <- b %>% 
-	group_by(from.NPI, to.NPI)
+pair.sum <- intermediate.df %>% 
+	group_by(to.NPI) %>% 
+	summarise(pair.sum = sum(pair.count)) %>% 
+	arrange(desc(pair.sum))
 
+bene.sum <- intermediate.df %>% 
+	group_by(to.NPI) %>% 
+	summarise(bene.sum = sum(bene.count)) %>% 
+	arrange(desc(bene.sum))
 
+same.day.sum <- intermediate.df %>% 
+	group_by(to.NPI) %>% 
+	summarise(same.day.sum = sum(same.day.count)) %>% 
+	arrange(desc(same.day.sum))
 
+# take a look how correlated the most popular NPIs are, and find that they are highly correlated.
+# one quarter of all possible relations are built in real life.
+test <- semi_join(intermediate.df, head.from, by = "from.NPI")
+test2 <- semi_join(test, head.to, by = "to.NPI")
+test2 <- test2 %>% 
+	arrange(desc(from.NPI))
 
 
