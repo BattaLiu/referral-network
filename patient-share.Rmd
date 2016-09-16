@@ -77,16 +77,22 @@ Combine patient sharing data with geocode data. I try to plot all the locations 
 First of all, I need to make up data frames for plots and list of data frames for paths.
 Then I can use get_googlemap to get the map and ggmap it.
 ```{r}
+# pick one city
+city <-  "NAPA"
 reserve <- df.patient.share.13
-df.patient.share.13 <- reserve[which(reserve$provider_business_practice_location_address_city_name=="NAPA"),]
+df.patient.share.13 <- reserve[which(reserve$provider_business_practice_location_address_city_name==city),]
 reserve14 <- df.patient.share.14
-df.patient.share.14 <- reserve14[which(reserve14$provider_business_practice_location_address_city_name=="NAPA"),]
+df.patient.share.14 <- reserve14[which(reserve14$provider_business_practice_location_address_city_name==city),]
+
+# npi1npi2 represents a unique link between health providers, and it can be used for "join" functions.
 df.patient.share.13$npi1npi2 <- paste(df.patient.share.13$npi1,df.patient.share.13$npi2,sep = "")
 df.patient.share.14$npi1npi2 <- paste(df.patient.share.14$npi1,df.patient.share.14$npi2,sep = "")
+
 disappear1314 <- anti_join(df.patient.share.13,df.patient.share.14,by = "npi1npi2")
 stay1314 <- inner_join(df.patient.share.13,df.patient.share.14,by = "npi1npi2")
 new1314 <- anti_join(df.patient.share.14,df.patient.share.13,by = "npi1npi2")
 
+# add geocode information to patient-sharing data
 only.geocode <- df.npi.geocode %>% 
 	select(npi_id, lon, lat,ctc)
 only.geocode <- only.geocode[which(only.geocode$ctc==1),]
@@ -94,66 +100,40 @@ only.geocode$ctc <- NULL
 stay1314.geo <- inner_join(stay1314, only.geocode, by = c("npi1.x"="npi_id"))
 stay1314.geo <- inner_join(stay1314.geo, only.geocode, by = c("npi2.x"="npi_id"))
 
-tmp <- stay1314.geo %>% 
-	group_by(lon.x, lat.x) %>% 
+# map.point is the data.frame of locations' geocode
+tmp1 <- stay1314.geo %>% 
+	select(lon.x, lat.x)
+names(tmp1) <- c("lon", "lat")
+tmp2 <-  stay1314.geo %>% 
+	select(lon.y, lat.y)
+names(tmp2) <- c("lon", "lat")
+tmp <- rbind(tmp1,tmp2)
+map.point <- tmp %>% 
+	group_by(lon, lat) %>% 
 	tally()
 
-
-tmp2 <- stay1314.geo %>% 
+# data.frame of links' geocode
+tmp1 <- stay1314.geo %>% 
 	group_by(lon.x, lat.x,lon.y, lat.y) %>% 
 	tally
-tmp3 <- tmp2 %>% 
-	group_by(lon.x, lat.x) %>% 
-	tally
-tmp3[which(tmp3$n<=30 & tmp3$n>=29),]
-tmp2$n <- NULL
-tmp2 <- data.frame(tmp2)
-tmp.2 <- tmp2 %>% 
-	select(lon.x,lat.x) %>% 
-	filter(lon.x == -122.29, lat.x ==38.29)
-names(tmp.2) <- c("lon","lat")
-tmp.3 <- tmp2 %>% 
-	filter(lon.x == -122.29, lat.x ==38.29) %>% 
+tmp1 <- data.frame(tmp1)
+tmp2 <- tmp1 %>% 
+	select(lon.x, lat.x)
+names(tmp2) <- c("lon","lat")
+tmp3 <- tmp1 %>% 
 	select(lon.y, lat.y)
-names(tmp.3) <- c("lon","lat")
+names(tmp3) <- c("lon","lat")
 
-tmp2.list <- split(tmp.2, seq(nrow(tmp.2)))
-tmp3.list <- split(tmp.3, seq(nrow(tmp.3)))
+tmp2.list <- split(tmp2, seq(nrow(tmp2)))
+tmp3.list <- split(tmp3, seq(nrow(tmp3)))
 system.time(tmp4 <- mapply(rbind, tmp2.list, tmp3.list, SIMPLIFY=FALSE))
 
-tmp4 <- tmp4 %>% 
-	group_by(lon)
-map1 <- get_googlemap("NAPA", markers = tmp, path = tmp4,scale = 2) 
-ggmap(map1)
-map2 <- get_googlemap("NAPA", markers = tmp, path = tmp4[31:60],scale = 2) 
-ggmap(map2)
-map3 <- get_googlemap("NAPA", markers = tmp, path = tmp4[61:90],scale = 2) 
-ggmap(map3)
-map4 <- get_googlemap("NAPA", markers = tmp, path = tmp4[91:120],scale = 2) 
-ggmap(map4)
+tmp5 <- lapply(names(tmp4), function(x) {cbind(route=x, tmp4[[x]], stringsAsFactors=FALSE)})
+map.link <- bind_rows(tmp5)
+basic.map <- get_googlemap(city, zoom = 10) 
 
-map5 <- get_googlemap("NAPA", markers = tmp, path = tmp4[121:150],scale = 2) 
-ggmap(map5)
-
-
-```
-
-
-```{r}
-tmp.2 <- tmp2 %>% 
-	select(lon.x,lat.x) 
-names(tmp.2) <- c("lon","lat")
-tmp.3 <- tmp2 %>% 
-	select(lon.y, lat.y)
-names(tmp.3) <- c("lon","lat")
-
-tmp2.list <- split(tmp.2, seq(nrow(tmp.2)))
-tmp3.list <- split(tmp.3, seq(nrow(tmp.3)))
-system.time(tmp4 <- mapply(rbind, tmp2.list, tmp3.list, SIMPLIFY=FALSE))
-
-tmp4 <- tmp4 %>% 
-	group_by(lon)
-map1 <- get_googlemap("NAPA", zoom = 10) 
-mapPoints <- ggmap(map1)+geom_point(aes(x = lon.x, y = lat.x,size = sqrt(n)), data = tmp, alpha = .5)
+mapPoints <- ggmap(basic.map)+
+	geom_point(aes(x = lon, y = lat,size = sqrt(n)), data = map.point, alpha = .5) +
+	geom_line(data = map.link,aes(x=lon, y=lat, group=route, color="blue"),size =0.1)
 ```
 
