@@ -1,6 +1,3 @@
-
-
-
 # take a look at the ACO data
 
 library(readr)
@@ -30,10 +27,17 @@ aco[aco$ACO.Legal.or.Name.Doing.Business.As=="Baroma Health Partners",] # same i
 aco[aco$ACO.Legal.or.Name.Doing.Business.As=="Mercy ACO, LLC",] # totally different info
 
 # find ACOs serving a targeted state
-CA.ACO <- as.character(aco$ACO.Legal.or.Name.Doing.Business.As[grep("CA", aco$ACO.Service.Area)])
-CA.only.ACO <- as.character(aco$ACO.Legal.or.Name.Doing.Business.As[aco$ACO.Service.Area=="CA"])
+ca.aco <- as.character(aco$ACO.Legal.or.Name.Doing.Business.As[grep("CA", aco$ACO.Service.Area)])
+ca.aco.part <- aco.part[grep("CA", aco.part$ACO.Service.Area),]
+ca.only.aco <- as.character(aco$ACO.Legal.or.Name.Doing.Business.As[aco$ACO.Service.Area=="CA"])
 part.cnt[part.cnt$ACO.Legal.or.Name.Doing.Business.As=="Baroma Health Partners",]
+part.cnt[part.cnt$ACO.Legal.or.Name.Doing.Business.As=="Mercy ACO, LLC",]
 test <- data.frame(aco.part[aco.part$ACO.Legal.or.Name.Doing.Business.As=="Baroma Health Partners",])
+# check whether the two duplicates located in CA, and find none:)
+tmp <- ca.aco.part[ca.aco.part$ACO.Legal.or.Name.Doing.Business.As=="Mercy ACO, LLC",] 
+tmp %>% 
+	group_by(ACO.Legal.or.Name.Doing.Business.As, Public.Contact.Phone) %>% 
+	tally()
 # write_csv(test, path = "part_name.csv")
 
 # associate ACO with shared patient network.
@@ -54,6 +58,24 @@ df_ca <- dbGetQuery(con,
 										" SELECT * FROM npi_20160710_ca_full")
 
 aco$postal.code <- as.character(aco$Zip.Code)
+business.name <- ca.aco.part %>% 
+	select(Participant.Legal.Business.Name)
+business.name$Participant.Legal.Business.Name <- as.character(business.name$Participant.Legal.Business.Name)
+business.name$correct.name <- toupper(business.name$Participant.Legal.Business.Name)
+business.name$correct.name <- gsub("\\s*,\\s*"," ",business.name$correct.name)
+business.name$correct.name <- gsub(".","",business.name$correct.name,fixed = TRUE)
+business.name$correct.name <- gsub("\\s*-\\s*"," ",business.name$correct.name)
+business.name$correct.name <- gsub("\\s+"," ",business.name$correct.name)
+
+
+
+tmp <- inner_join(business.name, df_ca, by = c( "Participant.Legal.Business.Name" = "provider_organization_name_legal_business_name"))
+indi.name <- df_ca %>% 
+	select(provider_first_name, provider_middle_name, 
+				 provider_last_name_legal_name, provider_credential_text) %>% 
+	mutate(full.name = paste(provider_name_prefix_text,provider_first_name, provider_middle_name, 
+													 provider_last_name_legal_name, provider_name_suffix_text, provider_credential_text,
+													 sep = " "))
 # remove the GPS location information from the zip.code
 aco$postal.code <- gsub("\n(.*)$","\\",aco$postal.code)
 
