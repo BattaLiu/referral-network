@@ -136,6 +136,7 @@ Geocode Table for National Provider Identifier (NPI) File. Dabo Brantley (CDC) a
 df.new <- left_join(df.npi.ca,df.npi.geocode, by = c("npi_id"="npi"))
 ```
 Let's see how different the address from DSTK API and address from 2015 NPI geocode data from naaccr. I think it is precise enough. I may clean the data and compliment these geocodes.
+
 ```{r}
 unique(df.new$st_abbr)
 df.ca.both <- df.new[which(df.new$st_abbr=="CA"),]
