@@ -98,13 +98,15 @@ df.nppes.clean <- df.nppes %>%
 
 
 df.nppes$new.name <- gsub("&"," and ", df.nppes$provider_organization_name_legal_business_name)
+df.nppes$new.name <- gsub("\\.", "", df.nppes$new.name)
 df.nppes$new.name <- gsub("[[:punct:]]"," ", df.nppes$new.name)
 df.nppes$new.name <- toupper(df.nppes$new.name)
 df.nppes$new.name2 <- gsub("[[:space:]]+"," ", df.nppes$new.name)
 df.nppes$new.name3 <- gsub("[[:space:]]$","", df.nppes$new.name2)
 df.nppes$new.name4 <- gsub("[[:space:]]*","", df.nppes$new.name3)
 
-aco.part$new.name <- gsub("&", " and ", aco.part$Participant.Legal.Business.Name)
+aco.part$new.name <- gsub("&", " and ",aco.part$Participant.Legal.Business.Name)
+aco.part$new.name <- gsub("\\.", "", aco.part$new.name)
 aco.part$new.name <- gsub("[[:punct:]]", " ", aco.part$new.name)
 aco.part$new.name <- toupper(aco.part$new.name)
 aco.part$new.name2 <- gsub("[[:space:]]+"," ", aco.part$new.name)
@@ -115,95 +117,74 @@ aco.part$new.name4 <- gsub("[[:space:]]*","", aco.part$new.name3)
 nppes.aco <- right_join(df.nppes, aco.part,by = c("new.name4" = "new.name4"))
 
 # check what's left, are they all individuals? No.
-tmp2 <- nppes.aco %>% 
-	filter(is.na(provider_organization_name_legal_business_name))
-tmp3 <- nppes.aco %>% 
+tmp <- nppes.aco %>% 
 	filter(!is.na(provider_organization_name_legal_business_name))
-length(unique(tmp3$Participant.Legal.Business.Name)) #9716
+length(unique(tmp$Participant.Legal.Business.Name)) #9716
 
 ```
 ### filter out the un-matched aco participants and match them with individual npi number
 #### Remove the suffixes of ACO participant names.
-
 ```{r}
-df.nppes$mid_name <- gsub("^([[:alpha:]]{1}).*", "\\1", df.nppes$provider_middle_name)
-df.nppes$ind.name <- paste(df.nppes$provider_first_name, df.nppes$mid_name,
+tmp <- nppes.aco %>% 
+	filter(is.na(provider_organization_name_legal_business_name)) %>% 
+	select(new.name3.y , Participant.Legal.Business.Name)
+tmp$no_suf <- gsub("\\s(PA)$","", tmp$new.name3.y)
+tmp$no_suf <- gsub("\\s(MD)$","", tmp$no_suf)
+tmp$no_suf <- gsub("^(DR)\\s","", tmp$no_suf)
+tmp$no_suf_no_space <- gsub("[[:space:]]+","",tmp$no_suf)
+```
+### Match with NPPES names with middle initials
+```{r}
+df.nppes$mid_init <- gsub("^([[:alpha:]]{1}).*", "\\1", df.nppes$provider_middle_name)
+df.nppes$name_mid_init <- paste(df.nppes$provider_first_name, df.nppes$mid_init,
 													 df.nppes$provider_last_name_legal_name, sep = " ")
-df.nppes$ind.name <-gsub("[:punct:]"," ",df.nppes$ind.name)
-df.nppes$ind.name <-gsub("[[:space:]]+"," ",df.nppes$ind.name)
+df.nppes$name_mid_init <- gsub("[:punct:]"," ",df.nppes$name_mid_init)
+df.nppes$name_mid_init_space <- gsub("[[:space:]]+"," ",df.nppes$name_mid_init)
+df.nppes$name_mid_init_no_space <- gsub("[[:space:]]+","",df.nppes$name_mid_init)
 
-tmp3 <- tmp2 %>% 
-	select(Participant.Legal.Business.Name)
-names(tmp3) <- "Participant.Legal.Business.Name"
-tmp4 <- semi_join(aco.part, tmp3, by = "Participant.Legal.Business.Name")
+nppes.aco.ind.mid.init <- right_join(df.nppes, tmp, by = c("name_mid_init_no_space" = "no_suf_no_space"))
 
+tmp2 <- nppes.aco.ind.mid.init %>% 
+	filter(!is.na(provider_organization_name_legal_business_name))
+length(unique(tmp2$Participant.Legal.Business.Name)) #1501
 
-tmp4$ind.name <- gsub("\\.", "", tmp4$Participant.Legal.Business.Name)
-tmp4$ind.name1 <- gsub("(,.*)", "", tmp4$ind.name)
-tmp4$ind.name1 <- toupper(tmp4$ind.name1)
-tmp4$ind.name2 <- gsub("^DR[[:space:]]", "", tmp4$ind.name1)
-tmp4$ind.name3 <- gsub("[[:space:]]+"," ",tmp4$ind.name2 )
+```
+### Match with NPPES names with full middle name
+```{r}
+tmp2 <- nppes.aco.ind.mid.init %>% 
+	filter(is.na(provider_organization_name_legal_business_name)) %>% 
+	select(name_mid_init_no_space , Participant.Legal.Business.Name)
+names(tmp2) <- c("no_suf_no_space","Participant.Legal.Business.Name")
+df.nppes$full_mid <- gsub("[:punct:]", "", df.nppes$provider_middle_name)
+df.nppes$name_full_mid <- paste(df.nppes$provider_first_name, df.nppes$full_mid,
+													 df.nppes$provider_last_name_legal_name, sep = " ")
+df.nppes$name_full_mid <- gsub("[:punct:]"," ",df.nppes$name_full_mid)
+df.nppes$name_full_mid_space <- gsub("[[:space:]]+"," ",df.nppes$name_full_mid)
+df.nppes$name_full_mid_no_space <- gsub("[[:space:]]+","",df.nppes$name_full_mid)
 
-nppes.aco.ind <- right_join(df.nppes, tmp4,by = c("ind.name" = "ind.name3"))
-tmp <- nppes.aco.ind %>% 
-	filter(!is.na(npi_id)) 
-length(unique(tmp$Participant.Legal.Business.Name)) #1259
+nppes.aco.ind.full.mid <- right_join(df.nppes, tmp2, by = c("name_full_mid_no_space" = "no_suf_no_space"))
+
+tmp3 <- nppes.aco.ind.full.mid %>%  
+	filter(!is.na(provider_organization_name_legal_business_name))
+length(unique(tmp3$Participant.Legal.Business.Name)) #87
 ```
 
 ```{r}
-tmp5 <- nppes.aco.ind %>% 
-	filter(is.na(npi_id)) %>% 
-	select(ind.name,Participant.Legal.Business.Name)
-df.nppes$no_mid_name <- paste(df.nppes$provider_first_name,
-													df.nppes$provider_last_name_legal_name, sep = " ")
-df.nppes$no_mid_name <- gsub("[:punct:]"," ",df.nppes$no_mid_name)
-df.nppes$no_mid_name <- gsub("[[:space:]]+"," ",df.nppes$no_mid_name)
-nppes.aco.ind2 <- right_join(df.nppes, tmp5,by = c("no_mid_name" = "ind.name"))
-tmp <- nppes.aco.ind2 %>% 
-	filter(!is.na(npi_id)) 
-length(unique(tmp$Participant.Legal.Business.Name)) #562
+tmp3 <- nppes.aco.ind.full.mid%>% 
+	filter(is.na(provider_organization_name_legal_business_name)) %>% 
+	select(name_full_mid_no_space , Participant.Legal.Business.Name)
+names(tmp3) <- c("no_suf_no_space","Participant.Legal.Business.Name")
+df.nppes$name_no_mid <- paste(df.nppes$provider_first_name,
+													 df.nppes$provider_last_name_legal_name, sep = " ")
+df.nppes$name_no_mid <- gsub("[:punct:]"," ",df.nppes$name_no_mid)
+df.nppes$name_no_mid_space <- gsub("[[:space:]]+"," ",df.nppes$name_no_mid)
+df.nppes$name_no_mid_no_space <- gsub("[[:space:]]+","",df.nppes$name_no_mid)
+
+nppes.aco.ind.no_mid <- right_join(df.nppes, tmp3, by = c("name_no_mid_no_space" = "no_suf_no_space"))
+
+tmp4 <- nppes.aco.ind.no_mid %>%  
+	filter(!is.na(provider_organization_name_legal_business_name))
+length(unique(tmp4$Participant.Legal.Business.Name)) #625
 ```
 
-```{r}
-tmp6 <- nppes.aco.ind2 %>% 
-	filter(is.na(npi_id)) %>% 
-	select(no_mid_name,Participant.Legal.Business.Name)
-
-tmp6$no_mid_name2 <- gsub("\\s(PC)$","", tmp6$no_mid_name)
-tmp6$no_mid_name2 <- gsub("\\s(PA)$","", tmp6$no_mid_name2)
-tmp6$no_mid_name2 <- gsub("\\s(MD)$","", tmp6$no_mid_name2)
-tmp6$no_mid_name3 <- gsub("\\s+","", tmp6$no_mid_name2)
-
-df.nppes$no_mid_no_space <- gsub("\\s+", "", df.nppes$no_mid_name)
-nppes.aco.ind3 <- right_join(df.nppes, tmp6,by = c("no_mid_no_space" = "no_mid_name3"))
-tmp <- nppes.aco.ind3 %>% 
-	filter(!is.na(npi_id)) 
-length(unique(tmp$Participant.Legal.Business.Name)) #335
-```
-
-```{r}
-tmp7 <- nppes.aco.ind3 %>% 
-	filter(is.na(npi_id)) %>% 
-	select(Participant.Legal.Business.Name)
-tmp7 <- semi_join(nppes.aco.ind,tmp7)
-tmp7$no_space_name <- gsub("\\s(PC)$","", tmp7$ind.name)
-tmp7$no_space_name <- gsub("\\s(PA)$","", tmp7$no_space_name)
-tmp7$no_space_name <- gsub("\\s(MD)$","", tmp7$no_space_name)
-tmp7$no_space_name <- gsub("\\s+","", tmp7$no_space_name)
-df.nppes$no_space_name <- gsub("\\s+","",df.nppes$ind.name)
-
-nppes.aco.ind4 <- right_join(df.nppes, tmp7,by = "no_space_name")
-tmp <- nppes.aco.ind4 %>% 
-	filter(!is.na(npi_id.x)) 
-length(unique(tmp$Participant.Legal.Business.Name)) #334
-```
-
-```{r}
-tmp8 <- nppes.aco.ind4 %>% 
-	filter(is.na(npi_id.x)) %>% 
-	select(no_space_name,Participant.Legal.Business.Name)
-
-
-```
-
-
+########################################
