@@ -1,10 +1,24 @@
+---
+title: "aco"
+author: "Batta Liu"
+date: "September 20, 2016"
+output: html_document
+---
 
-take a look at the ACO data
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### take a look at the ACO data
 ```{r}
+opts_chunk$set(results = "hide")
 library(readr)
 suppressMessages(library(dplyr))
 library(knitr)
-opts_chunk$set(results = "hide")
+require("RPostgreSQL")
+```
+
+```{r}
 aco.part <- read.csv(file = "aco/aco-participant.csv", header = TRUE, sep = ",") 
 aco <- read.csv(file = "aco/aco-list.csv", header = TRUE, sep = ",") #397
 
@@ -44,6 +58,152 @@ part.cnt[part.cnt$ACO.Legal.or.Name.Doing.Business.As=="Baroma Health Partners",
 test <- data.frame(aco.part[aco.part$ACO.Legal.or.Name.Doing.Business.As=="Baroma Health Partners",])
 # write_csv(test, path = "part_name.csv")
 ```
-associate ACO with shared patient network.
+
+### find out the aco participant npi.
+```{r NPPES}
+pw <- {
+	"no323232"
+}
+
+# loads the PostgreSQL driver
+drv <- dbDriver("PostgreSQL")
+
+# creates a connection to the postgres database
+# note that "con" will be used later in each connection to the database
+con <- dbConnect(drv, dbname = "liubatta",
+								 host = "192.168.0.10", port = 5432,
+								 user = "liubatta", password = pw)
+
+rm(pw) # removes the password
+# check for the cartable
+dbExistsTable(con, "tmp_test")
+df.nppes <- dbGetQuery(con, 
+												" SELECT npi_id, entity_type_code,
+												provider_organization_name_legal_business_name,
+					 							provider_first_name, provider_middle_name,
+												provider_last_name_legal_name
+												from npi_20160710")
+```
+
+```{r, eval=FALSE}
+df.nppes.clean <- df.nppes %>% 
+	select(npi_id, entity_type_code,
+												provider_organization_name_legal_business_name,
+					 							provider_first_name, provider_middle_name,
+												provider_last_name_legal_name)
+```
+
+
+```{r}
+
+
+df.nppes$new.name <- gsub("&"," and ", df.nppes$provider_organization_name_legal_business_name)
+df.nppes$new.name <- gsub("[[:punct:]]"," ", df.nppes$new.name)
+df.nppes$new.name <- toupper(df.nppes$new.name)
+df.nppes$new.name2 <- gsub("[[:space:]]+"," ", df.nppes$new.name)
+df.nppes$new.name3 <- gsub("[[:space:]]$","", df.nppes$new.name2)
+df.nppes$new.name4 <- gsub("[[:space:]]*","", df.nppes$new.name3)
+
+aco.part$new.name <- gsub("&", " and ", aco.part$Participant.Legal.Business.Name)
+aco.part$new.name <- gsub("[[:punct:]]", " ", aco.part$new.name)
+aco.part$new.name <- toupper(aco.part$new.name)
+aco.part$new.name2 <- gsub("[[:space:]]+"," ", aco.part$new.name)
+aco.part$new.name3 <- gsub("[[:space:]]$","", aco.part$new.name2)
+aco.part$new.name4 <- gsub("[[:space:]]*","", aco.part$new.name3)
+
+# from this command I can get 2/3 of aco participants, all of them are organizational participants
+nppes.aco <- right_join(df.nppes, aco.part,by = c("new.name4" = "new.name4"))
+
+# check what's left, are they all individuals? No.
+tmp2 <- nppes.aco %>% 
+	filter(is.na(provider_organization_name_legal_business_name))
+tmp3 <- nppes.aco %>% 
+	filter(!is.na(provider_organization_name_legal_business_name))
+length(unique(tmp3$Participant.Legal.Business.Name)) #9716
+
+```
+### filter out the un-matched aco participants and match them with individual npi number
+#### Remove the suffixes of ACO participant names.
+
+```{r}
+df.nppes$mid_name <- gsub("^([[:alpha:]]{1}).*", "\\1", df.nppes$provider_middle_name)
+df.nppes$ind.name <- paste(df.nppes$provider_first_name, df.nppes$mid_name,
+													 df.nppes$provider_last_name_legal_name, sep = " ")
+df.nppes$ind.name <-gsub("[:punct:]"," ",df.nppes$ind.name)
+df.nppes$ind.name <-gsub("[[:space:]]+"," ",df.nppes$ind.name)
+
+tmp3 <- tmp2 %>% 
+	select(Participant.Legal.Business.Name)
+names(tmp3) <- "Participant.Legal.Business.Name"
+tmp4 <- semi_join(aco.part, tmp3, by = "Participant.Legal.Business.Name")
+
+
+tmp4$ind.name <- gsub("\\.", "", tmp4$Participant.Legal.Business.Name)
+tmp4$ind.name1 <- gsub("(,.*)", "", tmp4$ind.name)
+tmp4$ind.name1 <- toupper(tmp4$ind.name1)
+tmp4$ind.name2 <- gsub("^DR[[:space:]]", "", tmp4$ind.name1)
+tmp4$ind.name3 <- gsub("[[:space:]]+"," ",tmp4$ind.name2 )
+
+nppes.aco.ind <- right_join(df.nppes, tmp4,by = c("ind.name" = "ind.name3"))
+tmp <- nppes.aco.ind %>% 
+	filter(!is.na(npi_id)) 
+length(unique(tmp$Participant.Legal.Business.Name)) #1259
+```
+
+```{r}
+tmp5 <- nppes.aco.ind %>% 
+	filter(is.na(npi_id)) %>% 
+	select(ind.name,Participant.Legal.Business.Name)
+df.nppes$no_mid_name <- paste(df.nppes$provider_first_name,
+													df.nppes$provider_last_name_legal_name, sep = " ")
+df.nppes$no_mid_name <- gsub("[:punct:]"," ",df.nppes$no_mid_name)
+df.nppes$no_mid_name <- gsub("[[:space:]]+"," ",df.nppes$no_mid_name)
+nppes.aco.ind2 <- right_join(df.nppes, tmp5,by = c("no_mid_name" = "ind.name"))
+tmp <- nppes.aco.ind2 %>% 
+	filter(!is.na(npi_id)) 
+length(unique(tmp$Participant.Legal.Business.Name)) #562
+```
+
+```{r}
+tmp6 <- nppes.aco.ind2 %>% 
+	filter(is.na(npi_id)) %>% 
+	select(no_mid_name,Participant.Legal.Business.Name)
+
+tmp6$no_mid_name2 <- gsub("\\s(PC)$","", tmp6$no_mid_name)
+tmp6$no_mid_name2 <- gsub("\\s(PA)$","", tmp6$no_mid_name2)
+tmp6$no_mid_name2 <- gsub("\\s(MD)$","", tmp6$no_mid_name2)
+tmp6$no_mid_name3 <- gsub("\\s+","", tmp6$no_mid_name2)
+
+df.nppes$no_mid_no_space <- gsub("\\s+", "", df.nppes$no_mid_name)
+nppes.aco.ind3 <- right_join(df.nppes, tmp6,by = c("no_mid_no_space" = "no_mid_name3"))
+tmp <- nppes.aco.ind3 %>% 
+	filter(!is.na(npi_id)) 
+length(unique(tmp$Participant.Legal.Business.Name)) #335
+```
+
+```{r}
+tmp7 <- nppes.aco.ind3 %>% 
+	filter(is.na(npi_id)) %>% 
+	select(Participant.Legal.Business.Name)
+tmp7 <- semi_join(nppes.aco.ind,tmp7)
+tmp7$no_space_name <- gsub("\\s(PC)$","", tmp7$ind.name)
+tmp7$no_space_name <- gsub("\\s(PA)$","", tmp7$no_space_name)
+tmp7$no_space_name <- gsub("\\s(MD)$","", tmp7$no_space_name)
+tmp7$no_space_name <- gsub("\\s+","", tmp7$no_space_name)
+df.nppes$no_space_name <- gsub("\\s+","",df.nppes$ind.name)
+
+nppes.aco.ind4 <- right_join(df.nppes, tmp7,by = "no_space_name")
+tmp <- nppes.aco.ind4 %>% 
+	filter(!is.na(npi_id.x)) 
+length(unique(tmp$Participant.Legal.Business.Name)) #334
+```
+
+```{r}
+tmp8 <- nppes.aco.ind4 %>% 
+	filter(is.na(npi_id.x)) %>% 
+	select(no_space_name,Participant.Legal.Business.Name)
+
+
+```
 
 
