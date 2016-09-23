@@ -118,7 +118,8 @@ nppes.aco <- right_join(df.nppes, aco.part,by = c("new.name4" = "new.name4"))
 
 # check what's left, are they all individuals? No.
 tmp <- nppes.aco %>% 
-	filter(!is.na(provider_organization_name_legal_business_name))
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(Participant.Legal.Business.Name)
 length(unique(tmp$Participant.Legal.Business.Name)) #9716
 
 ```
@@ -145,7 +146,8 @@ df.nppes$name_mid_init_no_space <- gsub("[[:space:]]+","",df.nppes$name_mid_init
 nppes.aco.ind.mid.init <- right_join(df.nppes, tmp, by = c("name_mid_init_no_space" = "no_suf_no_space"))
 
 tmp2 <- nppes.aco.ind.mid.init %>% 
-	filter(!is.na(provider_organization_name_legal_business_name))
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(Participant.Legal.Business.Name)
 length(unique(tmp2$Participant.Legal.Business.Name)) #1501
 
 ```
@@ -165,7 +167,8 @@ df.nppes$name_full_mid_no_space <- gsub("[[:space:]]+","",df.nppes$name_full_mid
 nppes.aco.ind.full.mid <- right_join(df.nppes, tmp2, by = c("name_full_mid_no_space" = "no_suf_no_space"))
 
 tmp3 <- nppes.aco.ind.full.mid %>%  
-	filter(!is.na(provider_organization_name_legal_business_name))
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(Participant.Legal.Business.Name)
 length(unique(tmp3$Participant.Legal.Business.Name)) #87
 ```
 
@@ -180,11 +183,37 @@ df.nppes$name_no_mid <- gsub("[:punct:]"," ",df.nppes$name_no_mid)
 df.nppes$name_no_mid_space <- gsub("[[:space:]]+"," ",df.nppes$name_no_mid)
 df.nppes$name_no_mid_no_space <- gsub("[[:space:]]+","",df.nppes$name_no_mid)
 
-nppes.aco.ind.no_mid <- right_join(df.nppes, tmp3, by = c("name_no_mid_no_space" = "no_suf_no_space"))
+nppes.aco.ind.no.mid <- right_join(df.nppes, tmp3, by = c("name_no_mid_no_space" = "no_suf_no_space"))
 
-tmp4 <- nppes.aco.ind.no_mid %>%  
-	filter(!is.na(provider_organization_name_legal_business_name))
+tmp4 <- nppes.aco.ind.no.mid %>%  
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(Participant.Legal.Business.Name)
 length(unique(tmp4$Participant.Legal.Business.Name)) #625
 ```
+
+```{r}
+tmp <- nppes.aco %>% 
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(npi_id,Participant.Legal.Business.Name)
+length(unique(tmp$Participant.Legal.Business.Name))
+tmp2 <- nppes.aco.ind.mid.init %>% 
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(npi_id,Participant.Legal.Business.Name)
+tmp3 <- nppes.aco.ind.full.mid %>%  
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(npi_id,Participant.Legal.Business.Name)
+tmp4 <- nppes.aco.ind.no.mid %>%  
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(npi_id,Participant.Legal.Business.Name)
+
+test <- full_join(tmp, tmp2)
+test2 <- full_join(test, tmp3)
+test3 <- full_join(test2, tmp4)
+length(unique(test3$Participant.Legal.Business.Name))
+
+
+```
+
+
 
 ########################################
