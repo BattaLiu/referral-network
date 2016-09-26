@@ -4,14 +4,9 @@ author: "Batta Liu"
 date: "September 20, 2016"
 output: html_document
 ---
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ### take a look at the ACO data
 ```{r}
-opts_chunk$set(results = "hide")
+knitr::opts_chunk$set(results = "hide")
 library(readr)
 suppressMessages(library(dplyr))
 library(knitr)
@@ -80,8 +75,10 @@ dbExistsTable(con, "tmp_test")
 df.nppes <- dbGetQuery(con, 
 												" SELECT npi_id, entity_type_code,
 												provider_organization_name_legal_business_name,
+                        provider_name_prefix_text,
 					 							provider_first_name, provider_middle_name,
-												provider_last_name_legal_name
+												provider_last_name_legal_name,
+												provider_name_suffix_text
 												from npi_20160710")
 ```
 
@@ -133,10 +130,18 @@ library(plyr)
 new.aco <- anti_join(aco.part,tmp, by = "Participant.Legal.Business.Name")
 test <-str_extract_all(new.aco$new.name3, "\\b(\\w{4})")
 new.aco$short_name <- sapply(test, paste, collapse = "")
+new.aco$short_name_count <- str_count(new.aco$short_name)
 
 test2 <- new.aco %>% 
 	group_by(short_name) %>% 
 	tally()
+
+test2$short_name_count <- str_count(test2$short_name)
+
+test4 <- test2 %>% 
+	filter(short_name_count>4)
+
+test4[which(test4$n ==2),]
 
 test3 <- test2 %>% 
 	filter(n==1) %>% 
