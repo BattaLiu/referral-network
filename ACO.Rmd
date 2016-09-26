@@ -122,52 +122,68 @@ length(unique(tmp$Participant.Legal.Business.Name)) #9716
 ```
 ### filter out the un-matched aco participants and match them with individual npi number
 
+```{r}
+tmp <- anti_join(aco.part,tmp, by = "Participant.Legal.Business.Name")
+df.nppes$mid_init <- gsub("^([[:alpha:]]{1}).*", "\\1", df.nppes$provider_middle_name)
+df.nppes$name_mid_init_suffix <- paste(df.nppes$provider_first_name,
+																			 df.nppes$mid_init,
+																			 df.nppes$provider_last_name_legal_name,
+																			 df.nppes$provider_name_suffix_text,
+																			 sep = " ")
+df.nppes$name_mid_init_suffix <- gsub("[:punct:]"," ",df.nppes$name_mid_init_suffix)
+df.nppes$name_mid_init_space_suffix <- gsub("[[:space:]]+"," ",df.nppes$name_mid_init_suffix)
+df.nppes$name_mid_init_no_space_suffix <- gsub("[[:space:]]+","",df.nppes$name_mid_init_suffix)
+
+nppes.aco.ind.mid.init.suffix <- right_join(df.nppes, tmp, by = c("name_mid_init_no_space_suffix" = "new.name4"))
+
+tmp2 <- nppes.aco.ind.mid.init.suffix %>% 
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(Participant.Legal.Business.Name)
+length(unique(tmp2$Participant.Legal.Business.Name)) #30
+
+```
+
+
 ### extract only the first four letters of each word.
 
 ```{r}
 library(stringr)
 library(plyr)
-new.aco <- anti_join(aco.part,tmp, by = "Participant.Legal.Business.Name")
+new.aco <- anti_join(tmp,tmp2, by = "Participant.Legal.Business.Name")
 test <-str_extract_all(new.aco$new.name3, "\\b(\\w{4})")
 new.aco$short_name <- sapply(test, paste, collapse = "")
-new.aco$short_name_count <- str_count(new.aco$short_name)
+#new.aco$short_name_count <- str_count(new.aco$short_name)
 
 test2 <- new.aco %>% 
 	group_by(short_name) %>% 
 	tally()
 
-test2$short_name_count <- str_count(test2$short_name)
-
-test4 <- test2 %>% 
-	filter(short_name_count>4)
-
-test4[which(test4$n ==2),]
+#test2$short_name_count <- str_count(test2$short_name)
 
 test3 <- test2 %>% 
 	filter(n==1) %>% 
 	select(short_name)
 
-part.new.aco <- semi_join(new.aco,test3)
+partial.new.aco <- semi_join(new.aco,test3)
 
 test <- str_extract_all(df.nppes$new.name3, "\\b(\\w{4})")
 df.nppes$short_name <- sapply(test, paste, collapse = "")
 
-nppes.aco.short.name <- right_join(df.nppes, part.new.aco, by = "short_name")
-tmp5 <- nppes.aco.short.name %>%  
+nppes.aco.short.name <- right_join(df.nppes, partial.new.aco, by = "short_name")
+tmp <- nppes.aco.short.name %>%  
 	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
 	select(npi_id,Participant.Legal.Business.Name, short_name)
-test4 <- tmp5 %>% 
+test <- tmp %>% 
 	group_by(Participant.Legal.Business.Name) %>% 
 	tally()
-tmp6 <- test4 %>% 
+tmp2 <- test %>% 
 	filter(n==1) %>% 
 	select(Participant.Legal.Business.Name)
 # keep only the unique matches, so the matched number is 1635.(If used after individual npi matching, the number is 1081)
-nppes.aco.short.name <- semi_join(nppes.aco.short.name, tmp6)
+nppes.aco.short.name <- semi_join(nppes.aco.short.name, tmp2)
+
+length(unique(nppes.aco.short.name$Participant.Legal.Business.Name))
 ```
-
-
-###################################################################
 
 #### Remove the suffixes of ACO participant names.
 ```{r}
@@ -192,7 +208,7 @@ nppes.aco.ind.mid.init <- right_join(df.nppes, tmp, by = c("name_mid_init_no_spa
 tmp2 <- nppes.aco.ind.mid.init %>% 
 	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
 	select(Participant.Legal.Business.Name)
-length(unique(tmp2$Participant.Legal.Business.Name)) #1501
+length(unique(tmp2$Participant.Legal.Business.Name)) # 1092 (before matching trimming-first-4-letter-match, the matched number is 1501)
 
 ```
 ### Match with NPPES names with full middle name
@@ -213,7 +229,7 @@ nppes.aco.ind.full.mid <- right_join(df.nppes, tmp2, by = c("name_full_mid_no_sp
 tmp3 <- nppes.aco.ind.full.mid %>%  
 	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
 	select(Participant.Legal.Business.Name)
-length(unique(tmp3$Participant.Legal.Business.Name)) #87
+length(unique(tmp3$Participant.Legal.Business.Name)) #73, (before is 87)
 ```
 
 ```{r}
@@ -232,36 +248,40 @@ nppes.aco.ind.no.mid <- right_join(df.nppes, tmp3, by = c("name_no_mid_no_space"
 tmp4 <- nppes.aco.ind.no.mid %>%  
 	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
 	select(Participant.Legal.Business.Name)
-length(unique(tmp4$Participant.Legal.Business.Name)) #625
+length(unique(tmp4$Participant.Legal.Business.Name)) #482 (Before is 625)
 ```
 
 ```{r}
 tmp <- nppes.aco %>% 
 	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
 	select(npi_id,Participant.Legal.Business.Name)
-length(unique(tmp$Participant.Legal.Business.Name))
-tmp2 <- nppes.aco.ind.mid.init %>% 
+tmp2 <- nppes.aco.ind.mid.init.suffix %>% 
 	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
 	select(npi_id,Participant.Legal.Business.Name)
-tmp3 <- nppes.aco.ind.full.mid %>%  
+tmp3 <- nppes.aco.short.name %>% 
+	select(npi_id,Participant.Legal.Business.Name)
+tmp4 <- nppes.aco.ind.mid.init %>% 
 	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
 	select(npi_id,Participant.Legal.Business.Name)
-tmp4 <- nppes.aco.ind.no.mid %>%  
+tmp5 <- nppes.aco.ind.full.mid %>%  
 	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
 	select(npi_id,Participant.Legal.Business.Name)
+tmp6 <- nppes.aco.ind.no.mid %>%  
+	filter(!is.na(provider_organization_name_legal_business_name)) %>% 
+	select(npi_id,Participant.Legal.Business.Name)
+
 
 test <- full_join(tmp, tmp2)
 test2 <- full_join(test, tmp3)
 test3 <- full_join(test2, tmp4)
-length(unique(test3$Participant.Legal.Business.Name)) #11929
-```
-### Try to use the same method on organizational NPIs. Or try to get the first four letters of any words longer than 3 letters.
+test4 <- full_join(test2, tmp5)
+test5 <- full_join(test2, tmp6)
 
+length(unique(test5$Participant.Legal.Business.Name)) #11822 (before is 11929)
+```
+### Why there are some unmatched ACO participants has record in NPPES data? They should have been matched.
 ```{r}
-tmp5 <- anti_join(part.new.aco, nppes.aco.short.name, by = "Participant.Legal.Business.Name")
-
-
+test <- anti_join(aco.part, test5, by = "Participant.Legal.Business.Name")
 ```
 
 
-########################################
