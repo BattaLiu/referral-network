@@ -1,0 +1,160 @@
+---
+title: "physician-compare-same-group"
+author: "Batta Liu"
+date: '2016-11-08'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages 
+```{r packages, echo=FALSE}
+require("RPostgreSQL")
+library(plyr)
+library(dplyr)
+library("ggplot2")
+library(ggmap)
+library(RDSTK)
+library(zipcode)
+library(abind)
+library(jsonlite)
+```
+## create a connection
+```{r connection, echo=FALSE}
+# save the password that we can "hide" it as best as we can by collapsing it
+pw <- {
+	"no323232"
+}
+
+# loads the PostgreSQL driver
+drv <- dbDriver("PostgreSQL")
+
+# creates a connection to the postgres database
+# note that "con" will be used later in each connection to the database
+con <- dbConnect(drv, dbname = "liubatta",
+								 host = "192.168.0.10", port = 5432,
+								 user = "liubatta", password = pw)
+
+rm(pw) # removes the password
+
+# check for the cartable
+dbExistsTable(con, "tmp_test")
+```
+load the physician compare data
+```{r}
+
+df.physician <- dbGetQuery(con, " SELECT * from physician_compare_20160908")
+df.npi <- dbGetQuery(con, 
+										 " SELECT npi_id,
+										 entity_type_code, 
+										 healthcare_provider_taxonomy_code_1
+										 from npi_20160710")
+
+taxonomy <- read.csv("/Users/batta/Dropbox/phd4/nursing-homes/read/Data/nucc_taxonomy_161.csv")
+```
+Check how many physicians are in the same practice group.
+```{r}
+group <- df.physician %>% 
+	select(npi,org_pac_id, num_org_mem) %>% 
+	unique(.) %>% # remove duplicated obs due to multiple PAC id
+	group_by(org_pac_id, num_org_mem) %>% 
+	tally %>% 
+	arrange(org_pac_id) #179795 practice group
+
+group$partial_medicare <- (group$n-as.numeric(group$num_org_mem)<0) # 1 are TRUE, 1308 doesn't report group practice number
+group$misreport <- (group$n-as.numeric(group$num_org_mem)>0) # 288 are TRUE
+group$num_org_mem <- as.numeric(group$num_org_mem)
+group_all_medicare <- group %>% 
+	filter(partial_medicare==FALSE, misreport==FALSE) # 178198 medical groups have full record.
+```
+Keep only the medical groups with full record. Check the affiliatons of physicians in the same medical group. And compare the results of physicians in the same group.
+```{r}
+group.physician <- semi_join(df.physician,group_all_medicare, by ="org_pac_id")
+affi.physician <- group.physician %>% 
+	filter(!is.na(hosp_afl_1))
+
+# check wherther physicians in the same group all have affiliation, answer is no
+group.affi <- affi.physician %>% 
+	select(npi,org_pac_id, num_org_mem) %>% 
+	unique(.) %>% 
+	group_by(org_pac_id, num_org_mem) %>% 
+	tally %>% 
+	arrange(org_pac_id)
+
+# check whether physicians in the same group all have the same affiliation.
+group.affi2 <- affi.physician %>% 
+	select(org_pac_id, num_org_mem, hosp_afl_1) %>% 
+	unique(.) %>% 
+	group_by(org_pac_id, num_org_mem,hosp_afl_1) %>% 
+	tally %>% 
+	arrange
+
+# filter out medical groups with only one hospital affiliation, and check other physicians' link with it. 
+
+tmp <- group.affi2 %>% 
+	select(org_pac_id) %>% 
+	tally %>% 
+	filter(n==1, num_org_mem>1)
+
+group.affi3	<- semi_join(df.physician, tmp, by = "org_pac_id")
+
+```
+"group.affi3" contains practices groups affiliated with only one hospital and with more than one physician.
+Check physician's taxonomies.
+```{r}
+df.npi$npi_id <- as.numeric(df.npi$npi_id)
+group.affi4 <- left_join(group.affi3, df.npi, by = c("npi"="npi_id")) # add taxonomy information to physician.
+tmp <- grep("^(20)",group.affi4$healthcare_provider_taxonomy_code_1) # need to check whether this is correct filter for MD and OD.
+group.affi5 <- group.affi4[tmp,]
+tmp <- group.affi5 %>% 
+	select(npi,org_pac_id, hosp_afl_1) %>% 
+	unique(.) %>% 
+	group_by(org_pac_id, hosp_afl_1) %>% 
+	tally
+
+tmp2 <- tmp %>% 
+	select(org_pac_id) %>% 
+	tally %>% 
+	filter(n>1)
+
+group.affi6 <- semi_join(group.affi5, tmp2, by = "org_pac_id") # groups with only one hospital affiliation, but also has physicians not affiliated with that hospital.
+
+tmp <- group.affi6 %>% 
+	select(npi,org_pac_id,hosp_afl_1,healthcare_provider_taxonomy_code_1) %>% 
+	unique(.) %>% 
+	group_by(org_pac_id,hosp_afl_1,healthcare_provider_taxonomy_code_1) %>% 
+	tally
+
+# check whether any misrecord of hospital affiliation, and the answer is no.
+tmp2 <- group.affi6 %>% 
+	select(npi,hosp_afl_1) %>% 
+	unique(.) %>% 
+	group_by(npi) %>% 
+	tally
+unique(tmp2$n)
+
+# check whether any dual-group problem of physician, and the answer is yes.
+tmp3 <- group.affi6 %>% 
+	select(npi,org_pac_id) %>% 
+	unique(.) %>% 
+	group_by(npi) %>% 
+	tally
+unique(tmp3$n)
+
+tmp4 <- tmp3 %>% 
+	filter(n==1)
+
+# filter the physicians in only one group.
+group.affi7 <- semi_join(group.affi6,tmp4, by = "npi")
+```
+
+
+```{r}
+
+group.affi8 <- semi_join(group.affi7, tmp, by = "npi")
+
+```
+
+
