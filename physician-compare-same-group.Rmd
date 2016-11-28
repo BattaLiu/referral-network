@@ -54,7 +54,7 @@ df.npi <- dbGetQuery(con,
 
 taxonomy <- read.csv("/Users/batta/Dropbox/phd4/nursing-homes/read/Data/nucc_taxonomy_161.csv")
 ```
-Check how many physicians are in the same practice group.
+Check how many physicians are in the same practice group, in order to see how many groups have member number different from the data variable. 
 ```{r}
 group <- df.physician %>% 
 	select(npi,org_pac_id, num_org_mem) %>% 
@@ -68,10 +68,97 @@ group$misreport <- (group$n-as.numeric(group$num_org_mem)>0) # 288 are TRUE
 group$num_org_mem <- as.numeric(group$num_org_mem)
 group_all_medicare <- group %>% 
 	filter(partial_medicare==FALSE, misreport==FALSE) # 178198 medical groups have full record.
-```
-Keep only the medical groups with full record. Check the affiliatons of physicians in the same medical group. And compare the results of physicians in the same group.
-```{r}
 group.physician <- semi_join(df.physician,group_all_medicare, by ="org_pac_id")
+
+```
+This following code is useless because Prof Marit just said most of people will focus on cardiologists.
+```{r, eval = FALSE}
+df.all <- df.all %>% 
+	mutate(same_taxonomy = (npi1_healthcare_provider_taxonomy_code_1==npi2_healthcare_provider_taxonomy_code_1))
+
+test <- df.all %>% 
+	group_by(npi1_healthcare_provider_taxonomy_code_1) %>% 
+	summarise( num_same_taxonomy = sum(same_taxonomy, na.rm = TRUE))
+
+test2 <- df.all %>% 
+	group_by(npi1,npi1_healthcare_provider_taxonomy_code_1) %>% 
+	summarise( num_same_taxonomy = sum(same_taxonomy, na.rm = TRUE))
+
+test3 <- test2 %>% 
+	group_by (npi1_healthcare_provider_taxonomy_code_1) %>% 
+	summarise(ave_same_taxonomy = mean(num_same_taxonomy, na.rm = TRUE))
+
+# test4 shows how physicians share patients with other physicians. 
+test4 <- test3 %>% 
+	arrange(ave_same_taxonomy)
+write.csv(test4, "/Users/batta/Dropbox/phd4/nursing-homes/referral-network/ave_same_taxonomy.csv")
+
+# 
+test5 <- df.all	%>% 
+	filter(npi1_healthcare_provider_taxonomy_code_1 == "207Q00000X"
+				 | npi1_healthcare_provider_taxonomy_code_1 == "207R00000X" 
+				 | npi1_healthcare_provider_taxonomy_code_1 == "208D00000X")
+
+test6 <- test5 %>% 
+	group_by(npi1,npi2_healthcare_provider_taxonomy_code_1) %>% 
+	tally
+
+names(test6)[names(test6)=="n"] <- "num_npi2_by_taxonomy"
+
+test6 <- test6 %>% 
+	group_by(npi2_healthcare_provider_taxonomy_code_1) %>% 
+	summarise(mean_npi2_taxonomy=mean(num_npi2_by_taxonomy), 
+				 sum_npi2_taxonomy =sum(num_npi2_by_taxonomy)) %>% 
+	arrange(mean_npi2_taxonomy)
+	
+test7 <- test6 %>% 
+	arrange(npi1, -num_npi2_by_taxonomy) %>% 
+	group_by(npi1) %>% 
+	mutate(rank = row_number()) 
+
+# test 8 ranks the taxonomies according to their average rank of links. The lower average rank, the more links to PCP. 
+# in constrast, test 4 ranks the taxonomies according to the average number of connected same-taxonomy npi2. The lower rank, the less same-taxonomy connection. 
+
+# However, average rank may have sample bias, therefore, 
+test8 <- test7 %>% 
+	group_by(npi2_healthcare_provider_taxonomy_code_1) %>% 
+	summarise( ave_rank = mean(rank)) %>% 
+	arrange(ave_rank)
+
+test9 <- head(test8,200)
+test10 <- head(test4, 290)
+test11 <- semi_join(test9, test10, by = c("npi2_healthcare_provider_taxonomy_code_1" = "npi1_healthcare_provider_taxonomy_code_1"))
+test11 <- left_join(test11, taxonomy, by = c("npi2_healthcare_provider_taxonomy_code_1"="Code"))
+test6 <- left_join(test6, taxonomy, by = c("npi2_healthcare_provider_taxonomy_code_1"="Code"))
+
+```
+
+
+```{r add taxonomy information to physicians, eval=FALSE}
+# just want to filter out the interested physicians and their main characteristics.
+record.physician <- group.physician %>% 
+	select(npi, gndr, cred, med_sch, grd_yr, pri_spec, sec_spec_1, org_pac_id, num_org_mem, 
+				 hosp_afl_1,hosp_afl_2,hosp_afl_3,hosp_afl_4,hosp_afl_5)
+
+record.physician <- record.physician %>% 
+	unique(.)
+df.npi$npi_id <- as.numeric(df.npi$npi_id)
+tmp <- left_join(record.physician, df.npi, by = c("npi"="npi_id"))
+
+# for year 16
+names(tmp) <- c("npi", "gndr", "16_cred", "16_med_sch", 
+								"16_grd_yr", "16_pri_spec", "16_sec_spec_1", "16_org_pac_id", 
+								"16_num_org_mem", "16_hosp_afl_1", "16_hosp_afl_2", "16_hosp_afl_3",
+								"16_hosp_afl_4","16_hosp_afl_5","entity_type_code", "healthcare_provider_taxonomy_code_1")
+
+dbWriteTable(con, "physician_compare_sub_2016", tmp)
+
+
+```
+
+Keep only the medical groups with full record. Check the affiliatons of physicians in the same medical group. However, Prof Marit told me that hospitals only contract with medical group, instead of individual physicians. Therefore, physicians in the same group should have the same affiliation. And compare the results of physicians in the same group.
+
+```{r, eval = FALSE}
 affi.physician <- group.physician %>% 
 	filter(!is.na(hosp_afl_1))
 
@@ -83,7 +170,8 @@ group.affi <- affi.physician %>%
 	tally %>% 
 	arrange(org_pac_id)
 
-# check whether physicians in the same group all have the same affiliation.
+# check whether physicians in the same group all have the same affiliation,answer is no.
+# group.affi2 checks the group-hospital pair
 group.affi2 <- affi.physician %>% 
 	select(org_pac_id, num_org_mem, hosp_afl_1) %>% 
 	unique(.) %>% 
@@ -93,10 +181,11 @@ group.affi2 <- affi.physician %>%
 
 # filter out medical groups with only one hospital affiliation, and check other physicians' link with it. 
 
+k <- 1 
 tmp <- group.affi2 %>% 
 	select(org_pac_id) %>% 
 	tally %>% 
-	filter(n==1, num_org_mem>1)
+	filter(n==k, num_org_mem>k)
 
 group.affi3	<- semi_join(df.physician, tmp, by = "org_pac_id")
 
@@ -150,10 +239,163 @@ tmp4 <- tmp3 %>%
 group.affi7 <- semi_join(group.affi6,tmp4, by = "npi")
 ```
 
+I want to Compare PCP g with PCP h in the same hospital. PCP g has specialist s in the same group. Let's go back and start from "group.physician". Where physicians have not been sorted by their affiliation. First of all, I want to find groups with PCP and specialist.
+```{r}
+k <- 1
+#tmp has groups with k affiliations. 
+tmp <- group.affi2 %>% 
+	select(org_pac_id) %>% 
+	tally %>% 
+	filter(n>=k)
+
+group.physician <- left_join(group.physician, df.npi, by = c("npi"= "npi_id")) 
+
+tmp2 <- semi_join(group.physician, tmp, by = "org_pac_id")
+tmp3 <- grep("(207Q00000X|207R00000X|208D00000X)", tmp2$healthcare_provider_taxonomy_code_1)
+tmp4 <- tmp2[tmp3,]
+
+# tmp5 has groups with k affiilations and some PCPs.
+tmp5 <- tmp4 %>% 
+	select(org_pac_id) %>% 
+	unique(.)
+
+#pcp.group has groups with k affiliations and some PCPs.
+pcp.group <- semi_join(group.physician, tmp5, by ="org_pac_id")
+
+tmp6 <- grep("207RC0000X", pcp.group$healthcare_provider_taxonomy_code_1) # which specialist should I choose?
+tmp7 <- pcp.group[tmp6,]
+# tmp8 has groups with k affiliations and some PCPs and specialist (cardiovascular)
+tmp8 <- pcp.group %>% 
+	select(org_pac_id) %>% 
+	unique(.)
+# pcp.spec.group has groups with k affiliations and some PCPs and specialist (cardiovascular)
+pcp.spec.group <- semi_join(group.physician, tmp8, by ="org_pac_id")
+# coincidence, tmp8 is the same as tmp5.
+```
+Second, I want to find hospitals with PCPs in different groups, but specialist and some PCPs are in the same hospital.
 
 ```{r}
+pcp.taxonomy <- data.frame(c("207Q00000X","207R00000X","208D00000X"))
+spec.taxonomy <- "207RC0000X"
 
-group.affi8 <- semi_join(group.affi7, tmp, by = "npi")
+names(pcp.taxonomy) <- "pcp_taxonomy"
+tmp <- semi_join(pcp.spec.group,pcp.taxonomy, by = c("healthcare_provider_taxonomy_code_1" = "pcp_taxonomy")) %>% 
+	mutate(pcp = 1) %>% 
+	select(npi, pcp) %>% 
+	unique(.)
+tmp2<- left_join(pcp.spec.group, tmp, by = "npi" )
+# add PCP and SPEC indicator in pcp.spec.group
+pcp.spec.group <- tmp2 %>% 
+	mutate(spec=(healthcare_provider_taxonomy_code_1=="207RC0000X"))
+
+# tmp has PCPs with hospital affiliations and also with specialists in the same group.
+tmp <- pcp.spec.group %>% 
+	filter(pcp==1 & !is.na(hosp_afl_1)) %>% 
+	
+# pcp.hosp are hospitals affiliated with PCPs in groups with specialists.
+pcp.hosp <- tmp %>% 
+	select(hosp_afl_1) %>% 
+	unique(.)
+
+tmp <- semi_join(pcp.spec.group, pcp.hosp)
+
+tmp2 <- tmp %>% 
+	group_by(hosp_afl_1, pcp, spec) %>% 
+	tally
+tmp2$n <- NULL
+tmp3 <- tmp2 %>% 
+	filter(pcp==1 | spec ==TRUE) %>% 
+	group_by(hosp_afl_1) %>% 
+	tally
+
+# pcp.spec.hosp are hospitals with PCP and specialists in the same medical group
+pcp.spec.hosp <- tmp3 %>% 
+	filter(n==2)
+
+# 
+tmp
+
+```
+
+#############
+Try coding again from hospitals' point.
+```{r}
+
+tmp <- group.physician %>% 
+	select(hosp_afl_1, healthcare_provider_taxonomy_code_1)
+
+tmp2 <- semi_join(tmp, pcp.taxonomy, by = c("healthcare_provider_taxonomy_code_1" = "pcp_taxonomy"))
+tmp2$healthcare_provider_taxonomy_code_1 <- 1
+tmp3 <- tmp %>% 
+	filter(healthcare_provider_taxonomy_code_1 =="207RC0000X")
+tmp4 <- rbind(tmp2, tmp3)
+# pcp.spec.hosp2 are hospitals with PCPs and specialists.
+pcp.spec.hosp2 <- tmp4 %>% 
+	unique(.) %>% 
+	group_by(hosp_afl_1) %>% 
+	tally %>% 
+	filter(n==2)
+
+hosp.physician <- semi_join(group.physician, pcp.spec.hosp2, by = "hosp_afl_1")
+
+tmp5 <- semi_join(hosp.physician, pcp.taxonomy, by = c("healthcare_provider_taxonomy_code_1" = "pcp_taxonomy"))
+tmp5$healthcare_provider_taxonomy_code_1 <- 1
+tmp6 <- hosp.physician %>% 
+	filter(healthcare_provider_taxonomy_code_1 == "207RC0000X")
+
+# pcp.spec.hosp3 are targeted PCP and specialists with hospital affiliations.
+pcp.spec.hosp3 <- rbind(tmp5, tmp6)
+tmp8 <- pcp.spec.hosp3 %>% 
+	select(hosp_afl_1, healthcare_provider_taxonomy_code_1, org_pac_id) %>% 
+	unique(.) %>% 
+	group_by(hosp_afl_1, healthcare_provider_taxonomy_code_1) %>% 
+	tally %>% 
+	filter(n>1)
+
+# tmp9 are hospitals with specialists in different groups and so do PCPs.
+tmp9 <- tmp8 %>% 
+	select(hosp_afl_1) %>% 
+	tally %>% 
+	filter(n==2) %>% 
+	select(hosp_afl_1)
+
+tmp10 <- pcp.spec.hosp3 %>% 
+	select(hosp_afl_1, org_pac_id, healthcare_provider_taxonomy_code_1) %>% 
+	unique(.) %>% 
+	group_by(hosp_afl_1, org_pac_id) %>% 
+	tally %>% 
+	filter(n==2) %>% 
+	select(hosp_afl_1)
+
+# tmp9 are hospitals with specialists in different groups and so do PCPs. And some of the specialists and PCPs are in the same group.
+tmp11 <- inner_join(tmp10,tmp9)
+pcp.spec.hosp4 <- semi_join(pcp.spec.hosp3, tmp11)
+
+```
+From hospital's aspect, check how many affiliated groups provides PCP and specialist, and how many provides only one.
+```{r}
+tmp <- pcp.spec.hosp4 %>% 
+	select(hosp_afl_1, org_pac_id, healthcare_provider_taxonomy_code_1) %>% 
+	unique(.) %>% 
+	group_by(hosp_afl_1, org_pac_id) %>% 
+	tally
+
+both.group <- tmp %>% 
+	filter(n==2)
+
+either.group <- tmp %>% 
+	filter(n==1)
+
+pcp.group <- semi_join(pcp.spec.hosp4, either.group, by = c("hosp_afl_1", "org_pac_id")) %>% 
+	filter(healthcare_provider_taxonomy_code_1==1) %>% 
+	group_by(hosp_afl_1, org_pac_id, healthcare_provider_taxonomy_code_1) %>% 
+	tally 
+
+spec.group <- semi_join(pcp.spec.hosp4, either.group, by = c("hosp_afl_1", "org_pac_id")) %>% 
+	filter(healthcare_provider_taxonomy_code_1!=1) %>% 
+	group_by(hosp_afl_1, org_pac_id, healthcare_provider_taxonomy_code_1) %>% 
+	tally
+
 
 ```
 
